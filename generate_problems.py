@@ -268,8 +268,8 @@ def generate_solution(problem_source, examples, num_deterministic_check=20, time
     for example in examples:
         input_grid, output_grid = example["input"], example["output"]
         output_grids = run_transformation(problem_source, input_grid, timeout=timeout, num_returns=num_deterministic_check)
-        correct = max([output_grid == o.tolist() for o in output_grids])
-        incorrect = max([output_grid != o.tolist() for o in output_grids])
+        correct = max([type(o) != str and output_grid == o.tolist() for o in output_grids])
+        incorrect = max([type(o) == str or output_grid != o.tolist() for o in output_grids])
         if correct and not incorrect: stats["correct"] += 1
         elif incorrect and not correct: stats["incorrect"] += 1
         else: stats["unknown"] += 1

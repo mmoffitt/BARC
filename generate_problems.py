@@ -255,6 +255,26 @@ def generate_problem(problem_source, num_input_grids=30, num_deterministic_check
 
     return problem, stats
 
+def generate_solution(problem_source, examples, num_deterministic_check=20, timeout=1):
+    """
+    Generates output grids for each input grid (using the transformation) and checks them against the expected result.
+    Return stats for the number of correct, incorrect, and unknown
+    """
+    start = time.time()
+    problem = Problem(problem_source)
+
+    stats = { "correct": 0, "incorrect": 0, "unknown": 0 }
+
+    for example in examples:
+        input_grid, output_grid = example["input"], example["output"]
+        output_grids = run_transformation(problem_source, input_grid, timeout=timeout, num_returns=num_deterministic_check)
+        correct = max([output_grid == o.tolist() for o in output_grids])
+        incorrect = max([output_grid != o.tolist() for o in output_grids])
+        if correct and not incorrect: stats["correct"] += 1
+        elif incorrect and not correct: stats["incorrect"] += 1
+        else: stats["unknown"] += 1
+    return stats
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--jsonl", type=str, help="Path to jsonl file containing program generation")
@@ -265,6 +285,7 @@ def main():
     parser.add_argument("--reprompt", action="store_true", help="Reprompt for failed problems")
     parser.add_argument("--indexes", nargs=2, type=int, help="Indexes of the problems to generate")
     parser.add_argument("--outdir", type=str, help="Output directory for the generated problems, if not the same as the input jsonl file")
+    parser.add_argument("--exampledir", type=str, help="Input directory for the generated examples")
     args = parser.parse_args()
 
     total_timeout = args.total_timeout 
@@ -309,6 +330,17 @@ def main():
         result_saving_file = args.outdir
         print(f"Saving to {result_saving_file}")
 
+    examples = {}
+    if args.exampledir:
+        example_files = os.listdir(args.exampledir)
+        # filter files with .json extension and 8 hex value characters in the file name
+        pattern = r"([0-9a-f]{8})\.json"
+        example_uids = [re.match(pattern, filename).group(1) for filename in example_files if re.match(pattern, filename)]
+        for example_uid in example_uids:
+            with open(f"{args.exampledir}/{example_uid}.json") as f:
+                import json
+                examples[example_uid] = json.loads(f.read())
+
     if problem_source_uids:
         for problem_source_uid in problem_source_uids:
             with open(f"seeds/{problem_source_uid}.py") as f:
@@ -319,10 +351,16 @@ def main():
     overall_stats = { "non_deterministic": 0, "non_color_invariant": {"transformation_fail": 0, "non_well_formed": 0, "non_color_invariant": 0}, "identity": 0, "non_well_formed_output": 0, "black_output": 0, "timeout": 0, "non_well_formed_input": 0, "duplicate_input": 0, "total": 0}
     problems = []
     # failed_problems = []
-    for i, problem_source in enumerate(tqdm.tqdm(problems_source)):
+    for i, problem_source in enumerate(problems_source if args.exampledir else tqdm.tqdm(problems_source)):
+        problem_source_uid = problem_source_uids[i]
         if not isinstance(problem_source, list):
             problem_source = [problem_source]
         for j, source in enumerate(problem_source):
+            if args.exampledir:
+                if problem_source_uid not in examples: continue
+                solution_stats = generate_solution(source, examples[problem_source_uid])
+                print(problem_source_uid + ": " + str(solution_stats))
+                continue
             problem, problem_stats = generate_problem(source, total_timeout=total_timeout)
             for key, stat in problem_stats.items():
                 if key == "non_color_invariant":
@@ -334,7 +372,7 @@ def main():
                 print(f"+1 problem with {len(problem.examples)} examples")
                 if args.jsonl:
                     problem.seeds = problems_seeds[i]
-                problem.source_uid = problem_source_uids[i]
+                problem.source_uid = problem_source_uid
                 problems.append(problem.to_dict())
                 break
             else:
@@ -343,7 +381,7 @@ def main():
                 print(f"*************************\ncodegen {j+1} failed\n*************************")
                 # failed_problems.append(problem_source)
 
-        print(f"so far, generated {len(problems)} problems")
+        if not args.exampledir: print(f"so far, generated {len(problems)} problems")
 
     # if args.reprompt and failed_problems:
     #     with open("tmp_descriptions_file.jsonl", "w") as f:
@@ -391,6 +429,7 @@ def main():
     # write list of Problem to jsonl file
     print(f'Generated {len(problems)} problems')
     print(f"Overall stats: {overall_stats}")
+    if args.exampledir: return  # We're just testing on examples, no need to generate
     for problem in problems:
         examples = [{"input": e[0], "output": e[1]} for e in problem["examples"]]
         with open(result_saving_file + "/" + problem["source_uid"] + ".json", "w") as f:

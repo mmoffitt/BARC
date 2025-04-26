@@ -15,6 +15,7 @@ class Problem:
         self.source = source_code
         self.examples = []
         self.seeds = []
+        self.source_uid = ""
         
 
     def add_example(self, input_grid, output_grid):
@@ -23,7 +24,8 @@ class Problem:
         return {
             "source": self.source,
             "examples": [(input_grid.tolist(), output_grid.tolist()) for input_grid, output_grid in self.examples],
-            "seeds": self.seeds
+            "seeds": self.seeds,
+            "source_uid": self.source_uid
         }
 
 
@@ -161,7 +163,7 @@ def run_transformation(source, input_grid, timeout=1, function_name="main", num_
     output_grids = multi_execute_transformation([source] * num_returns, [input_grid] * num_returns, random_seeds, timeout, function_name)
     return output_grids
 
-def generate_problem(problem_source, num_input_grids=30, num_deterministic_check=20, num_color_permute_check=20, timeout=1, total_timeout=30):
+def generate_problem(problem_source, num_input_grids=30, num_deterministic_check=20, num_color_permute_check=20, timeout=1, total_timeout=60):
     """
     Generate a problem by generating input grids and running the transformation on them.
     Return None for the problem if:
@@ -249,7 +251,7 @@ def generate_problem(problem_source, num_input_grids=30, num_deterministic_check
             stats["identity"] += 1
             stats["total"] += 1
             continue
-        problem.add_example(input_grid, output_grid)
+        if len(problem.examples) < 25: problem.add_example(input_grid, output_grid)
 
     return problem, stats
 
@@ -287,9 +289,6 @@ def main():
         result_saving_file = args.jsonl.replace(".jsonl", "_generated_problems.jsonl")
         if args.indexes:
             result_saving_file = args.jsonl.replace(".jsonl", f"_{args.indexes[0]}_{args.indexes[1]}.jsonl")
-        if args.outdir:
-            result_saving_file = os.path.join(args.outdir, os.path.basename(result_saving_file))
-        print(f"Saving to {result_saving_file}")
         with open(args.jsonl) as f:
             import json
             data = f.readlines()
@@ -305,6 +304,10 @@ def main():
         problems_source.append(source)
     else:
         raise ValueError("Provide one of problem_uid, run_all_seed or jsonl")
+
+    if args.outdir:
+        result_saving_file = args.outdir
+        print(f"Saving to {result_saving_file}")
 
     if problem_source_uids:
         for problem_source_uid in problem_source_uids:
@@ -331,6 +334,7 @@ def main():
                 print(f"+1 problem with {len(problem.examples)} examples")
                 if args.jsonl:
                     problem.seeds = problems_seeds[i]
+                problem.source_uid = problem_source_uids[i]
                 problems.append(problem.to_dict())
                 break
             else:
@@ -387,13 +391,14 @@ def main():
     # write list of Problem to jsonl file
     print(f'Generated {len(problems)} problems')
     print(f"Overall stats: {overall_stats}")
-    if args.jsonl:
-        with open(result_saving_file, "w") as f:
-            for problem in problems:
-                try:
-                    f.write(json.dumps(problem) + "\n")
-                except Exception as e:
-                    print(f"an error occurred: {e}")
+    for problem in problems:
+        examples = [{"input": e[0], "output": e[1]} for e in problem["examples"]]
+        with open(result_saving_file + "/" + problem["source_uid"] + ".json", "w") as f:
+            try:
+                import json
+                f.write(json.dumps(examples) + "\n")
+            except Exception as e:
+                print(f"an error occurred: {e}")
 
 
 if __name__ == "__main__":

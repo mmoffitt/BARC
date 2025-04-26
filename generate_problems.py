@@ -271,7 +271,10 @@ def generate_solution(problem_source, examples, num_deterministic_check=20, time
         correct = max([type(o) != str and output_grid == o.tolist() for o in output_grids])
         incorrect = max([type(o) == str or output_grid != o.tolist() for o in output_grids])
         if correct and not incorrect: stats["correct"] += 1
-        elif incorrect and not correct: stats["incorrect"] += 1
+        elif incorrect and not correct:
+            stats["incorrect"] += 1
+            print(example)
+            print(output_grids[0])
         else: stats["unknown"] += 1
     return stats
 
@@ -339,7 +342,10 @@ def main():
         for example_uid in example_uids:
             with open(f"{args.exampledir}/{example_uid}.json") as f:
                 import json
-                examples[example_uid] = json.loads(f.read())
+                problem_examples = json.loads(f.read())
+                if type(problem_examples) != list:
+                    problem_examples = problem_examples["train"] + problem_examples["test"]
+                examples[example_uid] = problem_examples
 
     if problem_source_uids:
         for problem_source_uid in problem_source_uids:
@@ -348,6 +354,15 @@ def main():
             problems_source.append(source)
 
 
+    bad_uids = ["1b2d62fb", "25ff71a9", "28e73c20", "3428a4f5", "bbc9ae5d", "cf98881b",
+                "feca6190", "25d8a9c8", "6fa7a44f", "995c5fa3", "9af7a82c", "db93a21d",
+                "e48d4e1a", "f8b3ba0a", "017c7c7b", "0520fde7", "178fcbfb", "1caeab9d",
+                "1fad071e", "2dee498d", "3618c87e", "3e980e27", "3f7978a0", "444801d8",
+                "54d82841", "6d58a25d", "7447852a", "834ec97d", "8403a5d5", "8d5021e8",
+                "8e5a5113", "9f236235", "a3df8b1e", "a79310a0", "a9f96cdd", "bd4472b8",
+                "d4a91cb9", "e179c5f4", "fcc82909", "ff28f65a", "025d127b", "1bfc4729",
+                "3ac3eb23", "8d510a79", "aabf363d", "d06dbe63", "d9f24cd1", "db3e9e38",
+                "eb281b96", "8a004b2b", "29c11459", "caa06a1f"]
     overall_stats = { "non_deterministic": 0, "non_color_invariant": {"transformation_fail": 0, "non_well_formed": 0, "non_color_invariant": 0}, "identity": 0, "non_well_formed_output": 0, "black_output": 0, "timeout": 0, "non_well_formed_input": 0, "duplicate_input": 0, "total": 0}
     problems = []
     # failed_problems = []
@@ -357,6 +372,7 @@ def main():
             problem_source = [problem_source]
         for j, source in enumerate(problem_source):
             if args.exampledir:
+                if problem_source_uid in bad_uids: continue
                 if problem_source_uid not in examples: continue
                 solution_stats = generate_solution(source, examples[problem_source_uid])
                 print(problem_source_uid + ": " + str(solution_stats))

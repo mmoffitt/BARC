@@ -359,6 +359,7 @@ def main():
             problems_source.append(source)
 
 
+    # For these UIDs, BARC fails on one or more ARC-AGI-1 example pairs.
     bad_uids = ["1b2d62fb", "25ff71a9", "28e73c20", "3428a4f5", "bbc9ae5d", "cf98881b",
                 "feca6190", "25d8a9c8", "6fa7a44f", "995c5fa3", "9af7a82c", "db93a21d",
                 "e48d4e1a", "f8b3ba0a", "017c7c7b", "0520fde7", "178fcbfb", "1caeab9d",
@@ -368,6 +369,7 @@ def main():
                 "d4a91cb9", "e179c5f4", "fcc82909", "ff28f65a", "025d127b", "1bfc4729",
                 "3ac3eb23", "8d510a79", "aabf363d", "d06dbe63", "d9f24cd1", "db3e9e38",
                 "eb281b96", "8a004b2b", "29c11459", "caa06a1f"]
+    bad_uids.append("4093f84a")  # BARC does not properly shift pixels in many cases.
     overall_stats = { "non_deterministic": 0, "non_color_invariant": {"transformation_fail": 0, "non_well_formed": 0, "non_color_invariant": 0}, "identity": 0, "non_well_formed_output": 0, "black_output": 0, "timeout": 0, "non_well_formed_input": 0, "duplicate_input": 0, "total": 0}
     problems = []
     # failed_problems = []

@@ -273,8 +273,13 @@ def generate_solution(problem_source, examples, num_deterministic_check=20, time
         if correct and not incorrect: stats["correct"] += 1
         elif incorrect and not correct:
             stats["incorrect"] += 1
-            print(example)
+            print("input:")
+            for row in example["input"]: print(" ".join([str(cell) for cell in row]))
+            print("output:")
+            for row in example["output"]: print(" ".join([str(cell) for cell in row]))
+            print("barc:")
             print(output_grids[0])
+            print()
         else: stats["unknown"] += 1
     return stats
 

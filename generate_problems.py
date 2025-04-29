@@ -371,6 +371,7 @@ def main():
                 "eb281b96", "8a004b2b", "29c11459", "caa06a1f"]
     bad_uids.append("4093f84a")  # BARC does not properly shift pixels in many cases.
     bad_uids.append("6aa20dc0")  # BARC fails on many inputs with unambiguous solutions.
+    bad_uids.append("264363fd")  # BARC often fills the entire flag with the wrong color.
     overall_stats = { "non_deterministic": 0, "non_color_invariant": {"transformation_fail": 0, "non_well_formed": 0, "non_color_invariant": 0}, "identity": 0, "non_well_formed_output": 0, "black_output": 0, "timeout": 0, "non_well_formed_input": 0, "duplicate_input": 0, "total": 0}
     problems = []
     # failed_problems = []

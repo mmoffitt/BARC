@@ -9,6 +9,7 @@ import tqdm
 import time
 from utils import get_concepts_from_lines, get_description_from_lines
 import subprocess
+import json
 
 class Problem:
     def __init__(self, source_code):
@@ -255,7 +256,7 @@ def generate_problem(problem_source, num_input_grids=30, num_deterministic_check
 
     return problem, stats
 
-def generate_solution(problem_source, examples, num_deterministic_check=20, timeout=1):
+def generate_solution(outdir, problem_source_uid, problem_source, examples, num_deterministic_check=20, timeout=1):
     """
     Generates output grids for each input grid (using the transformation) and checks them against the expected result.
     Return stats for the number of correct, incorrect, and unknown
@@ -265,12 +266,15 @@ def generate_solution(problem_source, examples, num_deterministic_check=20, time
 
     stats = { "correct": 0, "incorrect": 0, "unknown": 0 }
 
+    good_examples = []
     for example in examples:
         input_grid, output_grid = example["input"], example["output"]
         output_grids = run_transformation(problem_source, input_grid, timeout=timeout, num_returns=num_deterministic_check)
         correct = max([type(o) != str and output_grid == o.tolist() for o in output_grids])
         incorrect = max([type(o) == str or output_grid != o.tolist() for o in output_grids])
-        if correct and not incorrect: stats["correct"] += 1
+        if correct and not incorrect:
+            stats["correct"] += 1
+            good_examples.append(example)
         elif incorrect and not correct:
             stats["incorrect"] += 1
             print("input:")
@@ -281,6 +285,10 @@ def generate_solution(problem_source, examples, num_deterministic_check=20, time
             print(output_grids[0])
             print()
         else: stats["unknown"] += 1
+    if outdir:
+        import json
+        with open(os.path.join(outdir, f'{problem_source_uid}.json'), 'w') as fp:
+            json.dump(good_examples, fp)
     return stats
 
 def main():
@@ -338,20 +346,6 @@ def main():
         result_saving_file = args.outdir
         print(f"Saving to {result_saving_file}")
 
-    examples = {}
-    if args.exampledir:
-        example_files = os.listdir(args.exampledir)
-        # filter files with .json extension and 8 hex value characters in the file name
-        pattern = r"([0-9a-f]{8})\.json"
-        example_uids = [re.match(pattern, filename).group(1) for filename in example_files if re.match(pattern, filename)]
-        for example_uid in example_uids:
-            with open(f"{args.exampledir}/{example_uid}.json") as f:
-                import json
-                problem_examples = json.loads(f.read())
-                if type(problem_examples) != list:
-                    problem_examples = problem_examples["train"] + problem_examples["test"]
-                examples[example_uid] = problem_examples
-
     if problem_source_uids:
         for problem_source_uid in problem_source_uids:
             with open(f"seeds/{problem_source_uid}.py") as f:
@@ -369,22 +363,30 @@ def main():
                 "d4a91cb9", "e179c5f4", "fcc82909", "ff28f65a", "025d127b", "1bfc4729",
                 "3ac3eb23", "8d510a79", "aabf363d", "d06dbe63", "d9f24cd1", "db3e9e38",
                 "eb281b96", "8a004b2b", "29c11459", "caa06a1f"]
-    bad_uids.append("4093f84a")  # BARC does not properly shift pixels in many cases.
-    bad_uids.append("6aa20dc0")  # BARC fails on many inputs with unambiguous solutions.
-    bad_uids.append("264363fd")  # BARC often fills the entire flag with the wrong color.
-    bad_uids.append("228f6490")  # BARC (rarely) fails to place a 3-cell tetris piece
+    # bad_uids.append("4093f84a")  # BARC does not properly shift pixels in many cases.
+    # bad_uids.append("6aa20dc0")  # BARC fails on many inputs with unambiguous solutions.
+    # bad_uids.append("264363fd")  # BARC often fills the entire flag with the wrong color.
+    # bad_uids.append("228f6490")  # BARC (rarely) fails to place a 3-cell tetris piece
     overall_stats = { "non_deterministic": 0, "non_color_invariant": {"transformation_fail": 0, "non_well_formed": 0, "non_color_invariant": 0}, "identity": 0, "non_well_formed_output": 0, "black_output": 0, "timeout": 0, "non_well_formed_input": 0, "duplicate_input": 0, "total": 0}
     problems = []
     # failed_problems = []
     for i, problem_source in enumerate(problems_source if args.exampledir else tqdm.tqdm(problems_source)):
         problem_source_uid = problem_source_uids[i]
+        examples = {}
+        if args.exampledir:
+            with open(f"{args.exampledir}/{problem_source_uid}.json") as f:
+                import json
+                problem_examples = json.loads(f.read())
+                if type(problem_examples) != list:
+                    problem_examples = problem_examples["train"] + problem_examples["test"]
+                examples[problem_source_uid] = problem_examples
         if not isinstance(problem_source, list):
             problem_source = [problem_source]
         for j, source in enumerate(problem_source):
             if args.exampledir:
                 if problem_source_uid in bad_uids: continue
                 if problem_source_uid not in examples: continue
-                solution_stats = generate_solution(source, examples[problem_source_uid])
+                solution_stats = generate_solution(args.outdir, problem_source_uid, source, examples[problem_source_uid])
                 print(problem_source_uid + ": " + str(solution_stats))
                 continue
             problem, problem_stats = generate_problem(source, total_timeout=total_timeout)

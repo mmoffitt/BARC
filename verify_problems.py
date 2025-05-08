@@ -167,7 +167,7 @@ def run_transformation(source, input_grid, timeout=1, function_name="main", num_
 def generate_solution(problem_source_uid, problem_source, examples, num_deterministic_check=20, timeout=1):
     """
     Generates output grids for each input grid (using the transformation) and checks them against the expected result.
-    Return stats for the number of correct, incorrect, and unknown
+    Return 'True' if all examples pass, otherwise 'False'
     """
     start = time.time()
     problem = Problem(problem_source)
@@ -181,15 +181,10 @@ def generate_solution(problem_source_uid, problem_source, examples, num_determin
             output_grids = run_transformation(problem_source, input_grid, timeout=timeout, num_returns=num_deterministic_check)
             correct = max([type(o) != str and output_grid == o.tolist() for o in output_grids])
             incorrect = max([type(o) == str or output_grid != o.tolist() for o in output_grids])
-            if correct and not incorrect:
-                stats["correct"] += 1
-                good_examples.append(example)
-            elif incorrect and not correct:
-                stats["incorrect"] += 1
-            else: stats["unknown"] += 1
+            if incorrect: return False
         except:
-            stats["incorrect"] += 1
-    return stats
+            return False
+    return True
 
 def main():
     parser = argparse.ArgumentParser()
@@ -226,7 +221,7 @@ def main():
                 "eb281b96", "8a004b2b", "29c11459", "caa06a1f"]
     overall_stats = { "non_deterministic": 0, "non_color_invariant": {"transformation_fail": 0, "non_well_formed": 0, "non_color_invariant": 0}, "identity": 0, "non_well_formed_output": 0, "black_output": 0, "timeout": 0, "non_well_formed_input": 0, "duplicate_input": 0, "total": 0}
     problems = []
-    # failed_problems = []
+    failed_problems = []
     for i, problem_source in enumerate(problems_source if args.exampledir else tqdm.tqdm(problems_source)):
         problem_source_uid = problem_source_uids[i]
         examples = {}
@@ -242,8 +237,8 @@ def main():
             if args.exampledir:
                 if problem_source_uid in bad_uids: continue
                 if problem_source_uid not in examples: continue
-                solution_stats = generate_solution(problem_source_uid, source, examples[problem_source_uid])
-                print(problem_source_uid + ": " + str(solution_stats))
+                result = generate_solution(problem_source_uid, source, examples[problem_source_uid])
+                print(problem_source_uid + ": " + str(result))
 
     print(f"Overall stats: {overall_stats}")
 

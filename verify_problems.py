@@ -172,8 +172,6 @@ def generate_solution(problem_source_uid, problem_source, examples, num_determin
     start = time.time()
     problem = Problem(problem_source)
 
-    stats = { "correct": 0, "incorrect": 0, "unknown": 0 }
-
     good_examples = []
     for example in examples:
         try:
@@ -200,7 +198,7 @@ def main():
     seeds = os.listdir("seeds")
     # filter files with .py extension and 8 hex value characters in the file name
     pattern = r"([0-9a-f]{8})\.py"
-    problem_source_uids = [re.match(pattern, filename).group(1) for filename in seeds if re.match(pattern, filename)]
+    problem_source_uids = sorted([re.match(pattern, filename).group(1) for filename in seeds if re.match(pattern, filename)])
     # Now `matched_files` contains all the filenames that match the pattern
 
     if problem_source_uids:
@@ -220,7 +218,7 @@ def main():
                 "3ac3eb23", "8d510a79", "aabf363d", "d06dbe63", "d9f24cd1", "db3e9e38",
                 "eb281b96", "8a004b2b", "29c11459", "caa06a1f"]
     overall_stats = { "non_deterministic": 0, "non_color_invariant": {"transformation_fail": 0, "non_well_formed": 0, "non_color_invariant": 0}, "identity": 0, "non_well_formed_output": 0, "black_output": 0, "timeout": 0, "non_well_formed_input": 0, "duplicate_input": 0, "total": 0}
-    problems = []
+    passed_problems = []
     failed_problems = []
     for i, problem_source in enumerate(problems_source if args.exampledir else tqdm.tqdm(problems_source)):
         problem_source_uid = problem_source_uids[i]
@@ -237,10 +235,16 @@ def main():
             if args.exampledir:
                 if problem_source_uid in bad_uids: continue
                 if problem_source_uid not in examples: continue
+                print("Testing task " + problem_source_uid + " ... ", end="")
                 result = generate_solution(problem_source_uid, source, examples[problem_source_uid])
-                print(problem_source_uid + ": " + str(result))
+                if result:
+                    passed_problems.append(problem_source_uid)
+                if not result:
+                    failed_problems.append(problem_source_uid)
+                print("pass" if result else "FAIL")
 
-    print(f"Overall stats: {overall_stats}")
+    num_problems = len(passed_problems) + len(failed_problems)
+    print("Out of " + str(num_problems) + " tasks, a total of " + str(len(passed_problems)) + " tasks passed (" + str(100.0*len(passed_problems)/num_problems) + "%)")
 
 
 if __name__ == "__main__":

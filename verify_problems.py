@@ -176,16 +176,19 @@ def generate_solution(problem_source_uid, problem_source, examples, num_determin
 
     good_examples = []
     for example in examples:
-        input_grid, output_grid = example["input"], example["output"]
-        output_grids = run_transformation(problem_source, input_grid, timeout=timeout, num_returns=num_deterministic_check)
-        correct = max([type(o) != str and output_grid == o.tolist() for o in output_grids])
-        incorrect = max([type(o) == str or output_grid != o.tolist() for o in output_grids])
-        if correct and not incorrect:
-            stats["correct"] += 1
-            good_examples.append(example)
-        elif incorrect and not correct:
+        try:
+            input_grid, output_grid = example["input"], example["output"]
+            output_grids = run_transformation(problem_source, input_grid, timeout=timeout, num_returns=num_deterministic_check)
+            correct = max([type(o) != str and output_grid == o.tolist() for o in output_grids])
+            incorrect = max([type(o) == str or output_grid != o.tolist() for o in output_grids])
+            if correct and not incorrect:
+                stats["correct"] += 1
+                good_examples.append(example)
+            elif incorrect and not correct:
+                stats["incorrect"] += 1
+            else: stats["unknown"] += 1
+        except:
             stats["incorrect"] += 1
-        else: stats["unknown"] += 1
     return stats
 
 def main():

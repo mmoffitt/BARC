@@ -164,99 +164,7 @@ def run_transformation(source, input_grid, timeout=1, function_name="main", num_
     output_grids = multi_execute_transformation([source] * num_returns, [input_grid] * num_returns, random_seeds, timeout, function_name)
     return output_grids
 
-def generate_problem(problem_source, num_input_grids=30, num_deterministic_check=20, num_color_permute_check=20, timeout=1, total_timeout=60):
-    """
-    Generate a problem by generating input grids and running the transformation on them.
-    Return None for the problem if:
-    1. non-deterministic transformations
-    2. non color-invariant transformations
-
-    For the example input-output grid pair, remove for the example pair if:
-    1. input grid is the same as the output grid
-    """
-    start = time.time()
-    problem = Problem(problem_source)
-
-    
-    stats = { "non_deterministic": 0, "non_color_invariant": {"transformation_fail": 0, "non_well_formed": 0, "non_color_invariant": 0}, "identity": 0, "non_well_formed_output": 0, "black_output": 0, "timeout": 0, "non_well_formed_input": 0, "duplicate_input": 0, "total": 0 }
-    input_grids, input_stats = generate_input_grids(problem_source, num_returns=num_input_grids, timeout=timeout, deduplicate=True)
-    stats.update(input_stats)
-    random.seed(0)
-
-    # Check for non-deterministic transformations
-    for input_grid in input_grids:
-        if time.time() - start > total_timeout:
-            print(f"Total timeout reached after {total_timeout} seconds")
-            if stats["total"] == 0:
-                stats["timeout"] += 1
-            return None, stats
-        output_grids = run_transformation(problem_source, input_grid, timeout=timeout, num_returns=num_deterministic_check)
-        if len(output_grids) == 0:
-            print("No output grids")
-            continue
-        if not check_grids_all_equal(output_grids):
-            print("Non-deterministic transformation")
-            stats["non_deterministic"] += 1
-            stats["total"] += 1
-            return None, stats
-        if not all(check_grid(output_grid) for output_grid in output_grids):
-            # if any of the output grids are not well-formed, skip this particular input grid
-            print('Non well-formed output grid, skipping this input grid')
-            stats["non_well_formed_output"] += 1
-            stats["total"] += 1
-            continue
-        if np.all(output_grids[0] == 0):
-            print("Output grid is entirely black, skipping this example")
-            stats["black_output"] += 1
-            stats["total"] += 1
-            continue
-
-        expected_output_grids = output_grids[0]
-
-        # Check for non-color-invariant transformations
-        permuted_input_grids = []
-        modified_problem_sources = []
-        color_mappings = []
-        for _ in range(num_color_permute_check):
-            color_mapping = get_random_color_mapping(only_non_black=True)
-            color_mappings.append(color_mapping)
-            permuted_input_grid = apply_color_mapping(input_grid, color_mapping)
-            permuted_input_grids.append(permuted_input_grid)
-            modified_problem_source = add_color_changing_code(problem_source, color_mapping)
-            modified_problem_sources.append(modified_problem_source)
-
-        random_seeds = [random.randint(0, 1<<30) for _ in range(num_color_permute_check)]
-        permuted_output_grids = multi_execute_transformation(modified_problem_sources, 
-                                                             permuted_input_grids, random_seeds, timeout, function_name="main")
-
-        if len(permuted_output_grids) != num_color_permute_check:
-            print("some transformations failed during permute check")
-            stats["non_color_invariant"]["transformation_fail"] += 1
-            stats["total"] += 1
-            return None, stats
-        for permuted_output_grid, color_mapping in zip(permuted_output_grids, color_mappings):
-            if not check_grid(permuted_output_grid) or not check_grid(input_grid):
-                print("Permute check failed due to non-well-formed grids")
-                stats["non_color_invariant"]["non_well_formed"] += 1
-                stats["total"] += 1
-                return None, stats
-            if not check_identity(apply_color_mapping(expected_output_grids, color_mapping), permuted_output_grid):
-                print("Permute check failed")
-                stats["non_color_invariant"]["non_color_invariant"] += 1
-                stats["total"] += 1
-                return None, stats
-
-        output_grid = execute_transformation(problem_source, input_grid, timeout, function_name="main")
-        if check_identity(input_grid, output_grid):
-            print("Identity transformation, skipping this example")
-            stats["identity"] += 1
-            stats["total"] += 1
-            continue
-        if len(problem.examples) < 25: problem.add_example(input_grid, output_grid)
-
-    return problem, stats
-
-def generate_solution(outdir, problem_source_uid, problem_source, examples, num_deterministic_check=20, timeout=1):
+def generate_solution(problem_source_uid, problem_source, examples, num_deterministic_check=20, timeout=1):
     """
     Generates output grids for each input grid (using the transformation) and checks them against the expected result.
     Return stats for the number of correct, incorrect, and unknown
@@ -285,73 +193,30 @@ def generate_solution(outdir, problem_source_uid, problem_source, examples, num_
             print(output_grids[0])
             print()
         else: stats["unknown"] += 1
-    if outdir:
-        import json
-        with open(os.path.join(outdir, f'{problem_source_uid}.json'), 'w') as fp:
-            json.dump(good_examples, fp)
     return stats
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--jsonl", type=str, help="Path to jsonl file containing program generation")
-    parser.add_argument("--problem_source_uid", type=str, help="Problem id of a seed problem to validate")
-    parser.add_argument("--run_all_seed", action="store_true", help="Run all seed problems")
-    parser.add_argument("--py_file", type=str, help="Path to the python file containing the problem")
     parser.add_argument("--total_timeout", type=int, default=30, help="The total timeout value for a problem generation run")
-    parser.add_argument("--reprompt", action="store_true", help="Reprompt for failed problems")
-    parser.add_argument("--indexes", nargs=2, type=int, help="Indexes of the problems to generate")
-    parser.add_argument("--outdir", type=str, help="Output directory for the generated problems, if not the same as the input jsonl file")
     parser.add_argument("--exampledir", type=str, help="Input directory for the generated examples")
     args = parser.parse_args()
 
     total_timeout = args.total_timeout 
 
-    # only one of problem_uid or run_all_seed or jsonl should be provided
-    assert sum([args.problem_source_uid is not None, args.run_all_seed, args.jsonl is not None,
-                args.py_file is not None]) == 1, "Provide one of problem_uid, run_all_seed or jsonl"
-
     problems_source = []
     problems_seeds = []
     problem_source_uids = []
-    if args.problem_source_uid:
-        problem_source_uids = [args.problem_source_uid]
-    elif args.run_all_seed:
-        seeds = os.listdir("seeds")
-        # filter files with .py extension and 8 hex value characters in the file name
-        pattern = r"([0-9a-f]{8})\.py"
-        problem_source_uids = [re.match(pattern, filename).group(1) for filename in seeds if re.match(pattern, filename)]
-        # Now `matched_files` contains all the filenames that match the pattern
-    elif args.jsonl:
-        print(f"Reading from {args.jsonl}")
-        result_saving_file = args.jsonl.replace(".jsonl", "_generated_problems.jsonl")
-        if args.indexes:
-            result_saving_file = args.jsonl.replace(".jsonl", f"_{args.indexes[0]}_{args.indexes[1]}.jsonl")
-        with open(args.jsonl) as f:
-            import json
-            data = f.readlines()
-            for i, line in enumerate(data):
-                if args.indexes and i not in range(args.indexes[0], args.indexes[1]):
-                    continue
-                problem = json.loads(line)
-                problems_source.append(problem["code"])
-                problems_seeds.append(problem["seeds"])
-    elif args.py_file:
-        with open(args.py_file) as f:
-            source = f.read()
-        problems_source.append(source)
-    else:
-        raise ValueError("Provide one of problem_uid, run_all_seed or jsonl")
-
-    if args.outdir:
-        result_saving_file = args.outdir
-        print(f"Saving to {result_saving_file}")
+    seeds = os.listdir("seeds")
+    # filter files with .py extension and 8 hex value characters in the file name
+    pattern = r"([0-9a-f]{8})\.py"
+    problem_source_uids = [re.match(pattern, filename).group(1) for filename in seeds if re.match(pattern, filename)]
+    # Now `matched_files` contains all the filenames that match the pattern
 
     if problem_source_uids:
         for problem_source_uid in problem_source_uids:
             with open(f"seeds/{problem_source_uid}.py") as f:
                 source = f.read()
             problems_source.append(source)
-
 
     # For these UIDs, BARC fails on one or more ARC-AGI-1 example pairs.
     bad_uids = ["1b2d62fb", "25ff71a9", "28e73c20", "3428a4f5", "bbc9ae5d", "cf98881b",
@@ -363,109 +228,28 @@ def main():
                 "d4a91cb9", "e179c5f4", "fcc82909", "ff28f65a", "025d127b", "1bfc4729",
                 "3ac3eb23", "8d510a79", "aabf363d", "d06dbe63", "d9f24cd1", "db3e9e38",
                 "eb281b96", "8a004b2b", "29c11459", "caa06a1f"]
-    # bad_uids.append("4093f84a")  # BARC does not properly shift pixels in many cases.
-    # bad_uids.append("6aa20dc0")  # BARC fails on many inputs with unambiguous solutions.
-    # bad_uids.append("264363fd")  # BARC often fills the entire flag with the wrong color.
-    # bad_uids.append("228f6490")  # BARC (rarely) fails to place a 3-cell tetris piece
     overall_stats = { "non_deterministic": 0, "non_color_invariant": {"transformation_fail": 0, "non_well_formed": 0, "non_color_invariant": 0}, "identity": 0, "non_well_formed_output": 0, "black_output": 0, "timeout": 0, "non_well_formed_input": 0, "duplicate_input": 0, "total": 0}
     problems = []
     # failed_problems = []
     for i, problem_source in enumerate(problems_source if args.exampledir else tqdm.tqdm(problems_source)):
         problem_source_uid = problem_source_uids[i]
         examples = {}
-        if args.exampledir:
-            with open(f"{args.exampledir}/{problem_source_uid}.json") as f:
-                import json
-                problem_examples = json.loads(f.read())
-                if type(problem_examples) != list:
-                    problem_examples = problem_examples["train"] + problem_examples["test"]
-                examples[problem_source_uid] = problem_examples
+        with open(f"{args.exampledir}/{problem_source_uid}.json") as f:
+            import json
+            problem_examples = json.loads(f.read())
+            if type(problem_examples) != list:
+                problem_examples = problem_examples["train"] + problem_examples["test"]
+            examples[problem_source_uid] = problem_examples
         if not isinstance(problem_source, list):
             problem_source = [problem_source]
         for j, source in enumerate(problem_source):
             if args.exampledir:
                 if problem_source_uid in bad_uids: continue
                 if problem_source_uid not in examples: continue
-                solution_stats = generate_solution(args.outdir, problem_source_uid, source, examples[problem_source_uid])
+                solution_stats = generate_solution(problem_source_uid, source, examples[problem_source_uid])
                 print(problem_source_uid + ": " + str(solution_stats))
-                continue
-            problem, problem_stats = generate_problem(source, total_timeout=total_timeout)
-            for key, stat in problem_stats.items():
-                if key == "non_color_invariant":
-                    for sub_key, sub_stat in stat.items():
-                        overall_stats[key][sub_key] += sub_stat
-                else:
-                    overall_stats[key] += stat
-            if problem and len(problem.examples) >= 4:
-                print(f"+1 problem with {len(problem.examples)} examples")
-                if args.jsonl:
-                    problem.seeds = problems_seeds[i]
-                problem.source_uid = problem_source_uid
-                problems.append(problem.to_dict())
-                break
-            else:
-                if problem_source_uids:
-                    print(f"Problem {problem_source_uids[i]} is not valid")
-                print(f"*************************\ncodegen {j+1} failed\n*************************")
-                # failed_problems.append(problem_source)
 
-        if not args.exampledir: print(f"so far, generated {len(problems)} problems")
-
-    # if args.reprompt and failed_problems:
-    #     with open("tmp_descriptions_file.jsonl", "w") as f:
-    #         import json
-    #         # jsonl, one json per line
-    #         for failed_problem_source in failed_problems:
-    #             lines = failed_problem_source.split("\n")
-    #             concepts = get_concepts_from_lines(lines)
-    #             description = get_description_from_lines(lines)
-    #             f.write(json.dumps({"concepts": concepts,
-    #                                 "description": description,
-    #                                 }) + "\n")
-        
-    #     print("Running problem_from_description_prompt.py")
-    #     input_code_args = args.jsonl.split("_description")[0].split("_")
-    #     pfd_args = ["python", "problem_from_description_prompt.py", "--jsonl", "tmp_descriptions_file.jsonl", "--prompt_model", input_code_args[5], "-s", input_code_args[4], "--nohtml", "--ignore_cache_samples"]
-    #     subprocess.run(pfd_args)
-    #     print("Done problem_from_description_prompt.py")
-    #     # delete the tmp_descriptions_file.jsonl
-    #     os.remove("tmp_descriptions_file.jsonl")
-
-    #     file = f"self_instruct_code_fewshot_{input_code_args[4]}_{input_code_args[5]}_temp0.70_maxtokens2048_briefcommon_description_file_tmp_descriptions_file.jsonl"
-        
-    #     print("Running problem_generation.py")
-    #     pg_args = ["python", "problem_generation.py", "--jsonl", file, "--total_timeout", "60"]
-    #     subprocess.run(pg_args)
-    #     print("Done problem_generation.py")
-
-    #     # delete the file
-    #     os.remove(file)
-
-    #     with open(file.replace(".jsonl", "_generated_problems.jsonl")) as f:
-    #         data = f.readlines()
-    #         if data:
-    #             print(f"Reading from {file.replace('.jsonl', '_generated_problems.jsonl')}")
-    #             for line in data:
-    #                 problems.append(json.loads(line))
-    #             result_saving_file = args.jsonl.replace(".jsonl", "_some_revised_generated_problems.jsonl")
-    #         else:
-    #             print(f"No revised problems generated from {file.replace('.jsonl', '_generated_problems.jsonl')}")
-
-    #     # delete the generated_problems file
-    #     os.remove(file.replace(".jsonl", "_generated_problems.jsonl"))
-
-    # write list of Problem to jsonl file
-    print(f'Generated {len(problems)} problems')
     print(f"Overall stats: {overall_stats}")
-    if args.exampledir: return  # We're just testing on examples, no need to generate
-    for problem in problems:
-        examples = [{"input": e[0], "output": e[1]} for e in problem["examples"]]
-        with open(result_saving_file + "/" + problem["source_uid"] + ".json", "w") as f:
-            try:
-                import json
-                f.write(json.dumps(examples) + "\n")
-            except Exception as e:
-                print(f"an error occurred: {e}")
 
 
 if __name__ == "__main__":

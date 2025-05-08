@@ -185,13 +185,6 @@ def generate_solution(problem_source_uid, problem_source, examples, num_determin
             good_examples.append(example)
         elif incorrect and not correct:
             stats["incorrect"] += 1
-            print("input:")
-            for row in example["input"]: print(" ".join([str(cell) for cell in row]))
-            print("output:")
-            for row in example["output"]: print(" ".join([str(cell) for cell in row]))
-            print("barc:")
-            print(output_grids[0])
-            print()
         else: stats["unknown"] += 1
     return stats
 
